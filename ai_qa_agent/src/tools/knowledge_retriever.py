@@ -10,7 +10,6 @@ from langchain_core.tools.retriever import create_retriever_tool
 
 from config import settings
 
-
 def build_knowledge_retriever(
     vectorstore: Chroma,
     *,

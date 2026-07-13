@@ -9,10 +9,6 @@ Chroma 是嵌入式向量数据库，无需单独部署服务。
     再对过长的块用 RecursiveCharacterTextSplitter 二次切分
   - 其他格式（txt/pdf/docx/doc）：直接用 RecursiveCharacterTextSplitter 按字符切分
 
-标题拼接：MarkdownHeaderTextSplitter 会把标题移到 metadata，导致 chunk 内容
-缺少主题关键词（如 SVM 块只剩"寻找最优分离超平面..."正文，检索"支持向量机"时
-匹配不到）。因此切分后将标题以 "h1 / h2 / h3" 格式拼接到 chunk 内容前，既保留
-主题切分的好处，又增强关键词检索匹配。
 """
 import os
 

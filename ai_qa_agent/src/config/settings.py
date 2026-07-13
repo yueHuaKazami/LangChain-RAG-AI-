@@ -1,8 +1,7 @@
 """项目全局配置。
 
 所有 API 密钥、模型参数、路径配置集中在此模块管理。
-环境变量加载（含 HuggingFace 离线模式）必须在本模块首次 import 时完成，
-因此本模块应被所有其他模块优先导入。
+
 """
 import os
 from dotenv import load_dotenv
