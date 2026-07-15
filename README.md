@@ -15,4 +15,4 @@
 - 实现AICoding的MCP和SKILL规范
 - 实现schema本体在向量数据库中的应用
 ### 版本已维护至v0.2，等待后续开发 2026.7.19
-关键词：RAG LangChain MCP SKILL schema本体
+关键词：RAG LangChain chroma MCP SKILL schema本体
