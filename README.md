@@ -1,5 +1,5 @@
 # 说明
-项目的README.md需要在ai_qa_agent中查看，项目树目录存在部分问题待后续优化，不过是可以直接用的
+项目的README.md需要在ai_qa_agent中查看，项目树目录存在部分问题，不过仍可使用
 ## 项目维护日志
 1. 存在Bug
 - 由于temperature设置导致的RAG Chain模式用户进行正常对话时错误回复用户问题
