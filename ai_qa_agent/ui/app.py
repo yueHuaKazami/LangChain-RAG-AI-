@@ -13,6 +13,9 @@ import sys
 import time
 import io
 import streamlit as st
+import json
+import uuid
+from datetime import datetime
 
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, AIMessage
@@ -47,6 +50,9 @@ from retrieval.vectorstore import build_vectorstore
 from chains.rag_chain import build_rag_chain
 from agents.rag_agent import build_rag_agent
 from tools.knowledge_retriever import build_knowledge_retriever
+
+# 对话历史持久化文件路径
+CONVERSATIONS_FILE = os.path.join(_AGENT_DIR, "conversations.json")
 from chains.rag_chain import build_rag_chain
 
 # 页面配置
@@ -56,6 +62,81 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+# =============================================================================
+# 对话历史管理（持久化到本地 JSON 文件）
+# =============================================================================
+
+def _load_conversations() -> dict:
+    """从磁盘加载全部历史对话。"""
+    if os.path.exists(CONVERSATIONS_FILE):
+        try:
+            with open(CONVERSATIONS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+
+def _save_conversations(convs: dict) -> None:
+    """将全部历史对话写入磁盘。"""
+    with open(CONVERSATIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(convs, f, ensure_ascii=False, indent=2)
+
+
+def _get_conversation_title(messages: list[dict]) -> str:
+    """从消息列表中提取对话标题：首个用户问题的前4个词。"""
+    for msg in messages:
+        if msg["role"] == "user":
+            words = msg["content"].split()
+            title_words = words[:4]
+            return " ".join(title_words)
+    return "新对话"
+
+
+def _sync_current_to_history() -> None:
+    """将当前对话同步到历史字典并持久化到磁盘。"""
+    sid = st.session_state.current_session_id
+    msgs = st.session_state.messages
+    if not msgs:
+        return
+    st.session_state.conversations[sid] = {
+        "mode": st.session_state.chat_mode,
+        "title": _get_conversation_title(msgs),
+        "messages": list(msgs),
+        "created_at": st.session_state.conversations.get(sid, {}).get(
+            "created_at", datetime.now().isoformat()
+        ),
+    }
+    _save_conversations(st.session_state.conversations)
+
+
+def _start_new_session(mode: str | None = None) -> None:
+    """保存当前对话，然后开始一个空的新对话。
+
+    Args:
+        mode: 新对话使用的模式。None 表示沿用当前模式。
+    """
+    # 先保存当前对话（如果有内容）
+    _sync_current_to_history()
+    # 创建新会话
+    st.session_state.current_session_id = str(uuid.uuid4())[:8]
+    if mode is not None:
+        st.session_state.chat_mode = mode
+    st.session_state.messages = []
+
+
+def _load_session(sid: str) -> None:
+    """加载一条历史对话为当前会话。"""
+    if sid == st.session_state.current_session_id:
+        return  # 已经是当前会话，无需加载
+    # 先保存当前对话
+    _sync_current_to_history()
+    session = st.session_state.conversations[sid]
+    st.session_state.current_session_id = sid
+    st.session_state.chat_mode = session["mode"]
+    st.session_state.messages = list(session["messages"])
 
 # 缓存资源：LLM 和 Embeddings 模型（使用 st.cache_resource 避免重复加载）
 @st.cache_resource
@@ -224,7 +305,7 @@ def rebuild_index(doc_names: list[str], doc_contents: dict[str, str]) -> bool:
 
     # 3. 构建向量数据库（内部完成切分 + 向量化 + 存入 Chroma）
     embeddings = get_embeddings()
-    st.session_state.vectorstore = build_vectorstore(all_docs, embeddings)
+    st.session_state.vectorstore = build_vectorstore(all_docs, embeddings, llm=get_llm())
 
     progress_text.text("")
     return True
@@ -257,6 +338,12 @@ if "index_ready" not in st.session_state:
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None     # 向量数据库实例
 
+if "conversations" not in st.session_state:
+    st.session_state.conversations = _load_conversations()  # 全部历史对话 {sid: {...}}
+
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = str(uuid.uuid4())[:8]  # 当前会话 ID
+
 
 # =============================================================================
 # 侧边栏：知识库管理
@@ -273,12 +360,38 @@ with st.sidebar:
         key="sidebar_mode_radio",
     )
     if mode_option != st.session_state.chat_mode:
-        st.session_state.chat_mode = mode_option
-        st.session_state.messages = []  # 切换模式时清空历史，避免格式不兼容
+        _start_new_session(mode=mode_option)
         st.rerun()
 
-    mode_label = "Agent 智能决策" if st.session_state.chat_mode == "agent" else "🔗 Chain 确定性检索"
+    mode_label = "🤖 Agent 智能决策" if st.session_state.chat_mode == "agent" else "🔗 Chain 确定性检索"
     st.caption(f"当前模式：{mode_label}")
+
+    st.divider()
+
+    # ---- 历史对话列表 ----
+    st.subheader("📝 历史对话")
+
+    if st.button("➕ 新对话", use_container_width=True):
+        _start_new_session()
+        st.rerun()
+
+    convs = st.session_state.conversations
+    if convs:
+        sorted_convs = sorted(
+            convs.items(),
+            key=lambda x: x[1].get("created_at", ""),
+            reverse=True,
+        )
+        for sid, conv in sorted_convs:
+            mode_icon = "🤖" if conv["mode"] == "agent" else "🔗"
+            mode_short = "Agent" if conv["mode"] == "agent" else "Chain"
+            title = conv.get("title", "新对话")
+            btn_label = f"{mode_icon} [{mode_short}] {title}"
+            if st.button(btn_label, key=f"hist_{sid}", use_container_width=True):
+                _load_session(sid)
+                st.rerun()
+    else:
+        st.caption("（暂无历史记录）")
 
     st.divider()
 
@@ -415,3 +528,5 @@ if prompt := st.chat_input("输入你的问题，按 Enter 发送..."):
 
     # 4. 将助手消息保存到历史
     st.session_state.messages.append({"role": "assistant", "content": full_answer})
+    # 5. 将当前对话同步到本地历史文件
+    _sync_current_to_history()

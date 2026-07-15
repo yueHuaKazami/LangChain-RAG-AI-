@@ -15,12 +15,14 @@ import os
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_core.language_models import BaseChatModel
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
 
 from config import settings
+from retrieval.ontology import label_chunks_with_ontology
 
 # Markdown 按标题层级切分：每个 ## / ### 主题成为独立块
 _MARKDOWN_HEADERS = [
@@ -74,6 +76,7 @@ def build_vectorstore(
     documents: list[Document],
     embeddings: Embeddings,
     *,
+    llm: BaseChatModel | None = None,
     chunk_size: int = settings.CHUNK_SIZE,
     chunk_overlap: int = settings.CHUNK_OVERLAP,
 ) -> Chroma:
@@ -103,11 +106,24 @@ def build_vectorstore(
         all_chunks.extend(chunks)
     print(f"[vectorstore] 文档已切分为 {len(all_chunks)} 个块")
 
+    # 本体增强：用 LLM 为每个 chunk 打概念标签
+    if llm is not None:
+        all_chunks = label_chunks_with_ontology(all_chunks, llm)
+    else:
+        for chunk in all_chunks:
+            chunk.metadata.setdefault("concept_type", "General")
+        print("[vectorstore] 未提供 LLM，跳过本体标注")
+
     # 向量化存入 Chroma：自动用 embeddings 把每个 chunk 转成向量，
     # 把"文本块 + 向量 + 元数据"一起存入数据库
     vectorstore = Chroma.from_documents(
         documents=all_chunks,
         embedding=embeddings,
     )
+    concept_counts = {}
+    for chunk in all_chunks:
+        ct = chunk.metadata.get("concept_type", "General")
+        concept_counts[ct] = concept_counts.get(ct, 0) + 1
     print(f"[vectorstore] 向量数据库构建完成，共 {len(all_chunks)} 条向量")
+    print(f"[vectorstore] 概念分布：{concept_counts}")
     return vectorstore

@@ -1,0 +1,4 @@
+interface:
+  display_name: "RAG QA System"
+  short_description: "RAG-powered AI knowledge Q&A with LangChain, Chroma, and GLM-5.2"
+  default_prompt: "Use $rag-qa-system to set up or run the RAG knowledge Q&A system."

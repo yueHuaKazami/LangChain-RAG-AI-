@@ -14,6 +14,8 @@
 | Web 界面   | Streamlit，支持打字机效果、文档上传与索引管理                  |
 | CLI 终端   | 命令行对话，适合快速调试                                       |
 | 依赖注入   | LLM、Embeddings、工具均可通过工厂函数灵活替换                  |
+| 本体增强   | 入库时 LLM 自动标注概念标签，检索时 Chroma where 过滤，防止跨概念语义污染 |
+| MCP Server | 通过 MCP 协议对外暴露知识检索，供 Claude Desktop / Codex 等客户端调用 |
 
 ## 技术架构
 
@@ -43,6 +45,7 @@ ai_qa_agent/
 │   │   └── embeddings.py          # HuggingFaceEmbeddings 实例化
 │   ├── retrieval/                 # 文档加载 & 向量库构建
 │   │   ├── document_loader.py
+│   │   ├── ontology.py            # 领域本体 Schema + LLM 概念标注
 │   │   └── vectorstore.py
 │   ├── tools/                     # Agent 可调用工具
 │   │   ├── base_tool.py
@@ -50,14 +53,24 @@ ai_qa_agent/
 │   ├── memory/chat_memory.py      # 对话历史管理
 │   ├── agents/rag_agent.py        # ReAct Agent（LLM 自主决策）
 │   ├── chains/rag_chain.py        # LCEL Chain（确定性地检索）
+│   ├── mcp_server.py              # MCP Server（对外暴露检索工具）
 │   └── main.py                    # CLI 入口
 ├── ui/app.py                      # Streamlit Web UI
+├── SKILL/rag-qa-system/            # Codex SKILL（规范、参考文档、脚本）
+│   ├── SKILL.md
+│   ├── agents/openai.yaml
+│   ├── references/
+│   │   ├── architecture.md
+│   │   ├── configuration.md
+│   │   └── mcp.md
+│   └── scripts/validate_env.py
 ├── data/                          # 知识库文档
 │   ├── ai_knowledge.md
 │   ├── AI_master.docx
 │   ├── machine_learning.md
 │   └── neural_network.md
 ├── RULE.md                        # 架构规范
+├── FUTUREWORK.md                  # 技术演进路线图
 ├── Streamlit.md                   # UI 需求规格
 ├── qa_notes.md                    # 开发问答记录
 └── README.md
@@ -106,7 +119,7 @@ uv sync
 ```bash
 uv add langchain langchain-openai langchain-chroma langchain-text-splitters \
        langchain-huggingface sentence-transformers python-dotenv \
-       pypdf python-docx pywin32 streamlit torchvision
+       pypdf python-docx pywin32 streamlit torchvision mcp
 ```
 
 </details>
@@ -139,6 +152,41 @@ CLI 终端：
 ```bash
 uv run ai_qa_agent/src/main.py
 ```
+
+### MCP Server
+
+对外暴露知识检索为 MCP 工具，供 MCP 兼容客户端（Claude Desktop、Codex 等）调用：
+
+```bash
+# 安装 MCP SDK
+uv add mcp
+
+# 启动 MCP Server（stdio 传输）
+uv run ai_qa_agent/src/mcp_server.py
+```
+
+MCP 客户端配置：
+
+```json
+{
+  "mcpServers": {
+    "rag-knowledge-search": {
+      "command": "uv",
+      "args": ["run", "ai_qa_agent/src/mcp_server.py"],
+      "cwd": "/path/to/RAG_Langchain"
+    }
+  }
+}
+```
+
+暴露的工具：
+
+| 工具 | 参数 | 说明 |
+|------|------|------|
+| `ai_knowledge_search` | `query: str`, `k: int = 5` | 在 AI 知识库中检索相关文档 |
+| `ai_list_documents` | 无 | 列出已加载的全部文档 |
+
+详见 `SKILL/rag-qa-system/references/mcp.md`。
 
 ## 文档支持
 

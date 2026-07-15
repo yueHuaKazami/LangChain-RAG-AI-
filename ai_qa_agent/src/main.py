@@ -128,7 +128,7 @@ def main() -> None:
     # 阶段 1：加载文档并构建向量数据库
     print("\n[阶段1] 正在构建知识库...")
     documents = load_documents_from_dir()
-    vectorstore = build_vectorstore(documents, embeddings)
+    vectorstore = build_vectorstore(documents, embeddings, llm=llm)
 
     # 阶段 2：根据模式构建调度器并启动对话
     print(f"\n[阶段2] 正在构建 {mode.upper()} 调度器...")
